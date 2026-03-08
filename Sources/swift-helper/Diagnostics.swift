@@ -38,12 +38,41 @@ struct Diagnostics {
     
     // MARK: - Tool Checks
     
-    static func checkTool(_ tool: String, brewFormula: String? = nil) async -> CheckResult {
-        guard let path = (await runCommand("which \(tool)")).output?.trimmingCharacters(in: .whitespacesAndNewlines) else {
+    static func checkTool(_ tool: String) async -> CheckResult {
+        var path: String?
+        
+        // 1. Check PATH
+        let whichResult = await runCommand("which \(tool)")
+        if whichResult.exitCode == 0, let p = whichResult.output?.trimmingCharacters(in: .whitespacesAndNewlines), !p.isEmpty {
+            path = p
+        }
+        
+        // 2. Fallback: Check /opt/homebrew/bin for Apple Silicon if missing
+        if path == nil {
+            let fallbackPath = "/opt/homebrew/bin/\(tool)"
+            let existsResult = await runCommand("test -f \(fallbackPath) && echo 'yes'")
+            if existsResult.output?.contains("yes") == true {
+                path = fallbackPath
+            }
+        }
+        
+        // 3. Fallback: Ask Homebrew where it is
+        if path == nil {
+             let brewResult = await runCommand("brew --prefix \(tool)")
+             if brewResult.exitCode == 0, let prefix = brewResult.output?.trimmingCharacters(in: .whitespacesAndNewlines), !prefix.isEmpty {
+                 let candidate = "\(prefix)/bin/\(tool)"
+                 let existsResult = await runCommand("test -f \(candidate) && echo 'yes'")
+                 if existsResult.output?.contains("yes") == true {
+                     path = candidate
+                 }
+             }
+        }
+        
+        guard let finalPath = path else {
             return CheckResult(ok: false, message: "\(tool) missing")
         }
         
-        let fileInfo = (await runCommand("file \"\(path)\"")).output ?? ""
+        let fileInfo = (await runCommand("file \"\(finalPath)\"")).output ?? ""
         
         // Simple architecture check
         let isArm64 = fileInfo.contains("arm64") || fileInfo.contains("arm64e")
@@ -51,10 +80,10 @@ struct Diagnostics {
         // Doctor: if fileInfo.contains("x86_64") && !fileInfo.contains("arm64")...
         
         if fileInfo.contains("x86_64") && !isArm64 {
-            return CheckResult(ok: false, message: "\(tool) is x86_64-only (at \(path))")
+            return CheckResult(ok: false, message: "\(tool) is x86_64-only (at \(finalPath))")
         }
         
-        return CheckResult(ok: true, message: "\(tool) is valid (at \(path))")
+        return CheckResult(ok: true, message: "\(tool) is valid (at \(finalPath))")
     }
     
     static func checkDeveloperTools() async -> [CheckResult] {

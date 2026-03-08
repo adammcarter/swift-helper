@@ -9,6 +9,7 @@ func runCommand(_ command: String) async -> (output: String?, error: String?, ex
         let result = try await Subprocess.run(
             .path("/bin/zsh"),
             arguments: args,
+            environment: .custom(getEnvironmentWithHomebrewPath()),
             output: .string(limit: 10 * 1024 * 1024, encoding: UTF8.self), // 10MB limit
             error: .string(limit: 10 * 1024 * 1024, encoding: UTF8.self)
         )
@@ -39,6 +40,7 @@ func runShellCommand(_ command: String) async -> Int32 {
         let result = try await Subprocess.run(
             .path("/bin/zsh"),
             arguments: args,
+            environment: .custom(getEnvironmentWithHomebrewPath()),
             output: .standardOutput,
             error: .standardError
         )
@@ -54,4 +56,22 @@ func runShellCommand(_ command: String) async -> Int32 {
     } catch {
         return -1
     }
+}
+
+private func getEnvironmentWithHomebrewPath() -> [Subprocess.Environment.Key: String] {
+    var env = ProcessInfo.processInfo.environment
+    let homebrewBin = "/opt/homebrew/bin"
+    if let path = env["PATH"] {
+        if !path.contains(homebrewBin) {
+             env["PATH"] = "\(homebrewBin):\(path)"
+        }
+    } else {
+        env["PATH"] = "\(homebrewBin):/usr/bin:/bin:/usr/sbin:/sbin"
+    }
+    
+    var envKeys: [Subprocess.Environment.Key: String] = [:]
+    for (k, v) in env {
+        envKeys[Subprocess.Environment.Key(stringLiteral: k)] = v
+    }
+    return envKeys
 }

@@ -10,18 +10,52 @@ struct Doctor: AsyncParsableCommand {
     var shouldFix: Bool = false
 
     func run() async throws {
+        var failures = await performDiagnostics()
+        
+        if failures.isEmpty {
+            print("\n✅ All checks passed!")
+            return
+        }
+        
+        printFailures(failures)
+
+        var shouldRunFixes = shouldFix
+        if !shouldRunFixes {
+            print("\n⚠️  Issues were found that can be automatically fixed.")
+            print("Would you like to run the repair process now? [y/N]: ", terminator: "")
+            if let input = readLine(), input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "y" {
+                shouldRunFixes = true
+            }
+        }
+        
+        if shouldRunFixes {
+            let pathFixed = await runFixes()
+            
+            print("\n🔄 Verifying fixes...")
+            failures = await performDiagnostics()
+            
+            if failures.isEmpty {
+                print("\n✅ All checks passed!")
+                if pathFixed {
+                    print("\nℹ️  Note: Your shell configuration was updated.")
+                    print("   Please restart your terminal or run: exec /bin/zsh -l")
+                }
+            } else {
+                printFailures(failures)
+                print("\n⚠️  Some issues persist.")
+                if pathFixed {
+                     print("   Please restart your terminal or run: exec /bin/zsh -l")
+                }
+            }
+        }
+    }
+    
+    func performDiagnostics() async -> [String] {
         print("Running diagnostics...")
         
         var failures: [String] = []
         
         if await checkMachine() == false { failures.append("• Machine architecture mismatch") }
-        
-        if await checkSwiftProject() == false { 
-            failures.append("""
-            • Swift Project Workspace Missing:
-              Run 'swift-helper clone' to set up the environment automatically.
-            """)
-        }
         
         if await checkRosetta() == false { failures.append("• Running under Rosetta (performance impact)") }
         if await checkXcodeCLITools() == false { failures.append("• Xcode CLI Tools missing") }
@@ -29,61 +63,37 @@ struct Doctor: AsyncParsableCommand {
         if await checkBrew() == false { failures.append("• Homebrew configuration issues") }
         
         print("\n== Required Tools ==")
-        for tool in ["cmake", "ninja", "sccache"] {
+        for tool in ["cmake", "ninja", "sccache", "git", "rsync"] {
              if await checkTool(tool) == false { failures.append("• Missing or invalid tool: \(tool)") }
         }
-        if await checkTool("python3", brewFormula: "python") == false { failures.append("• Missing or invalid tool: python3") }
+        if await checkTool("python3") == false { failures.append("• Missing or invalid tool: python3") }
         
         if await checkDeveloperTools() == false { failures.append("• Developer Tools (xcrun/clang/swiftc) issues") }
         if await checkSDK() == false { failures.append("• macOS SDK missing") }
-
-        let allPassed = failures.isEmpty
-
-        if !allPassed {
-            print("\n\n🛑 DIAGNOSTIC FAILURES 🛑")
-            print("-------------------------")
-            for failure in failures {
-                print(failure)
-            }
-            print("-------------------------")
-        }
-
-        if shouldFix {
-            await runFixes()
-            printFailureSummary(failures)
-        } else if !allPassed {
-            print("\n⚠️  Issues were found that can be automatically fixed.")
-            print("Would you like to run the repair process now? [y/N]: ", terminator: "")
-            if let input = readLine(), input.lowercased() == "y" {
-                await runFixes()
-                printFailureSummary(failures)
-            }
-        }
+        
+        return failures
     }
     
-    func printFailureSummary(_ failures: [String]) {
-        if !failures.isEmpty {
-            print("\n🛑 DIAGNOSTIC FAILURES (Addressed) 🛑")
-            print("-------------------------")
-            for failure in failures {
-                print(failure)
-            }
-            print("-------------------------")
+    func printFailures(_ failures: [String]) {
+        print("\n\n🛑 DIAGNOSTIC FAILURES 🛑")
+        print("-------------------------")
+        for failure in failures {
+            print(failure)
         }
+        print("-------------------------")
     }
     
-    func runFixes() async {
+    func runFixes() async -> Bool {
         print("\n🚀 Starting repair process...")
-        await fixPath()
+        let pathFixed = await fixPath()
         await installDependencies()
         await installXcodeCLI()
-        print("\n🎉 Repair complete. Please restart your terminal session for changes to take effect.")
-        print("Run: exec /bin/zsh -l")
+        return pathFixed
     }
     
     // MARK: - Fixes
     
-    func fixPath() async {
+    func fixPath() async -> Bool {
         print("\n== PATH Fix ==")
         
         let zshrcPath = NSHomeDirectory() + "/.zshrc"
@@ -112,23 +122,33 @@ struct Doctor: AsyncParsableCommand {
                 }
                 try zshrcContent.write(toFile: zshrcPath, atomically: true, encoding: .utf8)
                 print("✅ Updated .zshrc")
+                return true
             } catch {
                 print("❌ Failed to write .zshrc: \(error)")
+                return false
             }
         } else {
             print("✅ .zshrc already contains necessary PATH configuration")
+            return false
         }
     }
     
     func installDependencies() async {
         print("\n== Dependencies ==")
-        let tools = ["cmake", "ninja", "sccache", "python3"]
+        let tools = [
+            ("cmake", "cmake"),
+            ("ninja", "ninja"),
+            ("sccache", "sccache"),
+            ("python3", "python"),
+            ("git", "git"),
+            ("rsync", "rsync")
+        ]
         
-        for tool in tools {
+        for (tool, formula) in tools {
+            // We use Diagnostics.checkTool directly here to avoid printing the UI
             let result = await Diagnostics.checkTool(tool)
+            
             if !result.ok {
-                let formula = (tool == "python3") ? "python" : tool
-                
                 // If missing or wrong arch
                 if result.message.contains("missing") {
                     print("⚠️ Installing \(tool)...")
@@ -186,19 +206,6 @@ struct Doctor: AsyncParsableCommand {
         return result.ok
     }
     
-    func checkSwiftProject() async -> Bool {
-        print("\n== Swift Project ==")
-        let projectPath = NSString(string: "~/repos/swift-project").expandingTildeInPath
-        var isDir: ObjCBool = false
-        if FileManager.default.fileExists(atPath: projectPath, isDirectory: &isDir) && isDir.boolValue {
-            print("✅ swift-project found at \(projectPath)")
-            return true
-        } else {
-            print("❌ swift-project not found at \(projectPath)")
-            return false
-        }
-    }
-    
     func checkRosetta() async -> Bool {
         print("\n== Rosetta ==")
         let result = await Diagnostics.checkRosetta()
@@ -245,21 +252,13 @@ struct Doctor: AsyncParsableCommand {
         return success
     }
     
-    func checkTool(_ tool: String, brewFormula: String? = nil) async -> Bool {
-        // Detailed print for Doctor, using Diagnostics result logic
-        if let path = (await runCommand("which \(tool)")).output?.trimmingCharacters(in: .whitespacesAndNewlines) {
-            let fileInfo = (await runCommand("file \"\(path)\"")).output?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            print("\(tool)")
-            print("  path: \(path)")
-            print("  file: \(fileInfo)")
-        }
-        
+    func checkTool(_ tool: String) async -> Bool {
         let result = await Diagnostics.checkTool(tool)
-        // Doctor prints specific messages
         if result.ok {
-             print("✅ \(tool) supports arm64")
+             print("✅ \(tool)")
         } else {
-             print("❌ \(result.message)")
+             print("❌ \(tool)")
+             print("   Error: \(result.message)")
         }
         return result.ok
     }

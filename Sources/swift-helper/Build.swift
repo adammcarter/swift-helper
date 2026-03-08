@@ -7,7 +7,7 @@ struct Build: AsyncParsableCommand {
     )
     
     @Option(name: .shortAndLong, help: "Path to the swift-project root.")
-    var projectPath: String = "~/repos/swift-project"
+    var projectPath: String?
 
     @Flag(name: .long, help: "Skip interactive mode and use defaults.")
     var defaultBuild: Bool = false
@@ -28,9 +28,22 @@ struct Build: AsyncParsableCommand {
     var yes: Bool = false
 
     func run() async throws {
-        let expandedPath = NSString(string: projectPath).expandingTildeInPath
         let fileManager = FileManager.default
-        let lastCommandPath = NSHomeDirectory() + "/.swift-helper_last_command"
+        let lastCommandPath = NSTemporaryDirectory() + "/.swift-helper_last_command"
+        
+        // Resolve project path
+        let resolvedPath: String
+        if let userPath = projectPath {
+            resolvedPath = NSString(string: userPath).expandingTildeInPath
+        } else {
+            // Check config
+            let configPath = NSTemporaryDirectory() + "/.swift-helper_project_path"
+            if let savedPath = try? String(contentsOfFile: configPath, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines), !savedPath.isEmpty {
+                 resolvedPath = savedPath
+            } else {
+                 resolvedPath = NSString(string: "~/repos/swift-project").expandingTildeInPath
+            }
+        }
         
         // Handle See Last
         if seeLast {
@@ -53,19 +66,20 @@ struct Build: AsyncParsableCommand {
         
         // Preflight Checks
         if !dryRun {
-            if await !performPreflightChecks() {
+            let checksPassed = await performPreflightChecks()
+            if !checksPassed {
                 print("\n❌ Preflight checks failed. Please run 'swift-helper doctor --fix' to resolve issues.")
                 throw ExitCode.failure
             }
         }
         
-        guard fileManager.fileExists(atPath: expandedPath) else {
-            print("❌ Project path not found: \(expandedPath)")
+        guard fileManager.fileExists(atPath: resolvedPath) else {
+            print("❌ Project path not found: \(resolvedPath)")
             throw ExitCode.failure
         }
         
-        guard fileManager.changeCurrentDirectoryPath(expandedPath) else {
-            print("❌ Failed to change directory to: \(expandedPath)")
+        guard fileManager.changeCurrentDirectoryPath(resolvedPath) else {
+            print("❌ Failed to change directory to: \(resolvedPath)")
             throw ExitCode.failure
         }
         
@@ -77,7 +91,7 @@ struct Build: AsyncParsableCommand {
                     print("❌ No previous build command found.")
                     throw ExitCode.failure
                 }
-                print("🔄 Rerunning last command in \(expandedPath)...")
+                print("🔄 Rerunning last command in \(resolvedPath)...")
                 
                 print("Executing:")
                 print("--------------------------------------------------")
@@ -116,7 +130,7 @@ struct Build: AsyncParsableCommand {
             print("ℹ️  Using default minimal configuration.")
         }
         
-        print("\n🚀 Starting build in \(expandedPath)...")
+        print("\n🚀 Starting build in \(resolvedPath)...")
         print("Configuration:")
         print("  - Build Type: \(options.buildType.rawValue)")
         print("  - Platforms: \(options.platforms.map { $0.rawValue }.joined(separator: ", "))")
@@ -162,7 +176,7 @@ struct Build: AsyncParsableCommand {
         
         if shouldSync {
              var syncCmd = SyncToolchain()
-             syncCmd.projectPath = projectPath
+             syncCmd.projectPath = resolvedPath
              syncCmd.yes = yes
              syncCmd.dryRun = dryRun
              try await syncCmd.run()
@@ -412,7 +426,7 @@ struct Build: AsyncParsableCommand {
         }
         
         // 3. Dependencies
-        let tools = ["cmake", "ninja", "sccache", "python3"]
+        let tools = ["cmake", "ninja", "sccache", "python3", "git", "rsync"]
         for tool in tools {
             let result = await Diagnostics.checkTool(tool)
             if !result.ok {

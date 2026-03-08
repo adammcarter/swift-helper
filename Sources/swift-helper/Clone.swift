@@ -7,11 +7,21 @@ struct Clone: AsyncParsableCommand {
     )
 
     @Option(name: .shortAndLong, help: "Path to where the project should be cloned.")
-    var projectPath: String = "~/repos/swift-project"
+    var projectPath: String?
 
     func run() async throws {
-        let expandedPath = NSString(string: projectPath).expandingTildeInPath
         let fileManager = FileManager.default
+        let expandedPath: String
+        
+        if let userPath = projectPath {
+             expandedPath = NSString(string: userPath).expandingTildeInPath
+        } else {
+             // Default: Sibling directory to the current working directory
+             // If we are in /Users/adam/repos/swift-helper, we want /Users/adam/repos/swift-project
+             let currentPath = fileManager.currentDirectoryPath
+             let parentPath = (currentPath as NSString).deletingLastPathComponent
+             expandedPath = parentPath + "/swift-project"
+        }
         
         if fileManager.fileExists(atPath: expandedPath) {
             print("❌ Directory already exists at \(expandedPath). Aborting.")
@@ -19,6 +29,14 @@ struct Clone: AsyncParsableCommand {
         }
 
         print("🚀 Cloning Swift Project to \(expandedPath)...")
+        
+        // Save path for future use
+        let configPath = NSTemporaryDirectory() + "/.swift-helper_project_path"
+        do {
+            try expandedPath.write(toFile: configPath, atomically: true, encoding: .utf8)
+        } catch {
+             print("⚠️ Failed to save project path to config: \(error)")
+        }
 
         // 1. Create Directory
         do {

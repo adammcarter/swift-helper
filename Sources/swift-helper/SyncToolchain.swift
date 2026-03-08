@@ -8,7 +8,7 @@ struct SyncToolchain: AsyncParsableCommand {
     )
     
     @Option(name: .shortAndLong, help: "Path to the swift-project root.")
-    var projectPath: String = "~/repos/swift-project"
+    var projectPath: String?
 
     @Flag(name: .shortAndLong, help: "Skip confirmation prompts.")
     var yes: Bool = false
@@ -19,8 +19,22 @@ struct SyncToolchain: AsyncParsableCommand {
     func run() async throws {
         let toolchainDest = NSString(string: "~/Library/Developer/Toolchains/swift-local.xctoolchain").expandingTildeInPath
         
+        // Resolve project path
+        let resolvedPath: String
+        if let userPath = projectPath {
+            resolvedPath = NSString(string: userPath).expandingTildeInPath
+        } else {
+            // Check config
+            let configPath = NSTemporaryDirectory() + "/.swift-helper_project_path"
+            if let savedPath = try? String(contentsOfFile: configPath, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines), !savedPath.isEmpty {
+                 resolvedPath = savedPath
+            } else {
+                 resolvedPath = NSString(string: "~/repos/swift-project").expandingTildeInPath
+            }
+        }
+        
         // Source path depends on build settings. We hardcode arm64-testing for now based on Build.swift
-        let projectDir = NSString(string: projectPath).expandingTildeInPath
+        let projectDir = resolvedPath
         let sourcePath = "\(projectDir)/build/arm64-testing/toolchain-macosx-arm64/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/"
         
         let rsyncCommand = "rsync -a --delete --exclude 'Info.plist' \"\(sourcePath)\" \"\(toolchainDest)/\""
@@ -55,7 +69,7 @@ struct SyncToolchain: AsyncParsableCommand {
         // Get Git Info
         var extraInfo = ""
         // Check swift repo specifically since project root is likely a monorepo workspace
-        let swiftRepoPath = "\(projectDir)/swift"
+        let swiftRepoPath = "\(resolvedPath)/swift"
         
         // Only attempt if directory exists
         var isGitRepo = false
