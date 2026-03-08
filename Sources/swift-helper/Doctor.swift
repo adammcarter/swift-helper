@@ -12,31 +12,63 @@ struct Doctor: AsyncParsableCommand {
     func run() async throws {
         print("Running diagnostics...")
         
-        var allPassed = true
+        var failures: [String] = []
         
-        allPassed = await checkMachine() && allPassed
-        allPassed = await checkRosetta() && allPassed
-        allPassed = await checkXcodeCLITools() && allPassed
-        allPassed = await checkPathOrder() && allPassed
-        allPassed = await checkBrew() && allPassed
+        if await checkMachine() == false { failures.append("• Machine architecture mismatch") }
+        
+        if await checkSwiftProject() == false { 
+            failures.append("""
+            • Swift Project Workspace Missing:
+              Run 'swift-helper clone' to set up the environment automatically.
+            """)
+        }
+        
+        if await checkRosetta() == false { failures.append("• Running under Rosetta (performance impact)") }
+        if await checkXcodeCLITools() == false { failures.append("• Xcode CLI Tools missing") }
+        if await checkPathOrder() == false { failures.append("• PATH configuration issues (Homebrew should be before /usr/local/bin)") }
+        if await checkBrew() == false { failures.append("• Homebrew configuration issues") }
         
         print("\n== Required Tools ==")
-        allPassed = await checkTool("cmake") && allPassed
-        allPassed = await checkTool("ninja") && allPassed
-        allPassed = await checkTool("sccache") && allPassed
-        allPassed = await checkTool("python3", brewFormula: "python") && allPassed
+        for tool in ["cmake", "ninja", "sccache"] {
+             if await checkTool(tool) == false { failures.append("• Missing or invalid tool: \(tool)") }
+        }
+        if await checkTool("python3", brewFormula: "python") == false { failures.append("• Missing or invalid tool: python3") }
         
-        allPassed = await checkDeveloperTools() && allPassed
-        allPassed = await checkSDK() && allPassed
+        if await checkDeveloperTools() == false { failures.append("• Developer Tools (xcrun/clang/swiftc) issues") }
+        if await checkSDK() == false { failures.append("• macOS SDK missing") }
+
+        let allPassed = failures.isEmpty
+
+        if !allPassed {
+            print("\n\n🛑 DIAGNOSTIC FAILURES 🛑")
+            print("-------------------------")
+            for failure in failures {
+                print(failure)
+            }
+            print("-------------------------")
+        }
 
         if shouldFix {
             await runFixes()
+            printFailureSummary(failures)
         } else if !allPassed {
             print("\n⚠️  Issues were found that can be automatically fixed.")
             print("Would you like to run the repair process now? [y/N]: ", terminator: "")
             if let input = readLine(), input.lowercased() == "y" {
                 await runFixes()
+                printFailureSummary(failures)
             }
+        }
+    }
+    
+    func printFailureSummary(_ failures: [String]) {
+        if !failures.isEmpty {
+            print("\n🛑 DIAGNOSTIC FAILURES (Addressed) 🛑")
+            print("-------------------------")
+            for failure in failures {
+                print(failure)
+            }
+            print("-------------------------")
         }
     }
     
@@ -152,6 +184,19 @@ struct Doctor: AsyncParsableCommand {
         let result = await Diagnostics.checkArchitecture()
         printResult(result)
         return result.ok
+    }
+    
+    func checkSwiftProject() async -> Bool {
+        print("\n== Swift Project ==")
+        let projectPath = NSString(string: "~/repos/swift-project").expandingTildeInPath
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: projectPath, isDirectory: &isDir) && isDir.boolValue {
+            print("✅ swift-project found at \(projectPath)")
+            return true
+        } else {
+            print("❌ swift-project not found at \(projectPath)")
+            return false
+        }
     }
     
     func checkRosetta() async -> Bool {

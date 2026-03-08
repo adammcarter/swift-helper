@@ -175,58 +175,155 @@ struct Build: AsyncParsableCommand {
         var options = BuildOptions()
         
         // 1. Build Type
-        print("\n1. Select Build Type:")
-        print("   1) Release with Debug Info (Recommended for Dev) [Default]")
-        print("   2) Release (Fastest Runtime)")
-        print("   3) Debug (Fastest Build)")
-        if let input = readLine(), let choice = Int(input) {
-            switch choice {
-            case 2: options.buildType = .release
-            case 3: options.buildType = .debug
-            default: options.buildType = .releaseDebugInfo
+        while true {
+            print("\n1. Select Build Type (Enter '?' for help):")
+            print("   1) Release with Debug Info (Recommended for Dev) [Default]")
+            print("   2) Release (Fastest Runtime)")
+            print("   3) Debug (Fastest Build)")
+            
+            let input = readLine()?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if input == "?" {
+                print("\nℹ️  Build Types determine compiler optimizations and debug symbols:")
+                print("   • Release with Debug Info: Best for development. Optimized code but keeps symbols for debugging.")
+                print("   • Release: Maximum optimization. Harder to debug, but fastest execution.")
+                print("   • Debug: No optimization. Fastest to build, but code runs slower. Best for step-through debugging.")
+                continue
             }
+            
+            if input.isEmpty {
+                options.buildType = .releaseDebugInfo
+                break
+            }
+            
+            if let choice = Int(input) {
+                switch choice {
+                case 1: options.buildType = .releaseDebugInfo; break
+                case 2: options.buildType = .release; break
+                case 3: options.buildType = .debug; break
+                default: 
+                    print("❌ Invalid selection.")
+                    continue
+                }
+                break
+            }
+            print("❌ Invalid input.")
         }
         
         // 2. Platforms
-        print("\n2. Select Target Platforms:")
-        print("   1) macOS (arm64) only [Default]")
-        print("   2) macOS + iOS")
-        print("   3) macOS + iOS + tvOS + watchOS + visionOS")
-        if let input = readLine(), let choice = Int(input) {
-            switch choice {
-            case 2:
-                options.platforms = [.macOS, .iOS]
-            case 3:
-                options.platforms = [.macOS, .iOS, .tvOS, .watchOS, .visionOS]
-            default:
-                options.platforms = [.macOS]
+        while true {
+            print("\n2. Select Target Platforms (Enter '?' for help):")
+            print("   1) macOS (arm64) only [Default]")
+            print("   2) macOS + iOS")
+            print("   3) macOS + iOS + tvOS + watchOS + visionOS")
+            
+            let input = readLine()?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if input == "?" {
+                print("\nℹ️  Platforms determine which OS SDKs the toolchain will support:")
+                print("   • macOS only: Builds only for the host machine. Fastest.")
+                print("   • macOS + iOS: Includes iOS device/simulator support.")
+                print("   • All Platforms: Includes tvOS, watchOS, and visionOS. Significantly longer build time.")
+                continue
             }
+            
+            if input.isEmpty {
+                options.platforms = [.macOS]
+                break
+            }
+            
+            if let choice = Int(input) {
+                switch choice {
+                case 1: options.platforms = [.macOS]; break
+                case 2: options.platforms = [.macOS, .iOS]; break
+                case 3: options.platforms = [.macOS, .iOS, .tvOS, .watchOS, .visionOS]; break
+                default: 
+                    print("❌ Invalid selection.")
+                    continue
+                }
+                break
+            }
+            print("❌ Invalid input.")
         }
         
         // 3. Components
-        print("\n3. Select Components to Build:")
-        print("   1) Minimal (Stdlib + SwiftPM + Driver + Testing) [Default]")
-        print("   2) Compiler Only (Stdlib + Driver)")
-        print("   3) Full Toolchain (Everything)")
-        if let input = readLine(), let choice = Int(input) {
-            switch choice {
-            case 2:
-                options.components = [.stdlib, .swiftDriver]
-            case 3:
-                options.components = Set(BuildComponent.allCases)
-            default:
-                options.components = [.stdlib, .swiftPM, .swiftDriver, .swiftSyntax, .llbuild]
+        while true {
+            print("\n3. Select Components to Build (Enter '?' for help):")
+            print("   1) Minimal (Stdlib + SwiftPM + Driver + Testing) [Default]")
+            print("   2) Compiler Only (Stdlib + Driver)")
+            print("   3) Full Toolchain (Everything)")
+            
+            let input = readLine()?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if input == "?" {
+                print("\nℹ️  Components determine which parts of the Swift ecosystem are built:")
+                print("   • Minimal: Standard development set.")
+                print("     Builds: stdlib, swiftpm, swift-driver, swift-syntax")
+                print("     Modules available to import:")
+                print("       - Swift")
+                print("       - _Concurrency")
+                print("       - _StringProcessing")
+                print("       - RegexBuilder")
+                print("       - PackageDescription")
+                print("       - SwiftSyntax")
+                print("       - SwiftParser")
+                
+                print("   • Compiler Only: Just the essentials to run 'swiftc'.")
+                print("     Builds: stdlib, swift-driver")
+                print("     Modules available to import:")
+                print("       - Swift")
+                print("       - _Concurrency")
+                
+                print("   • Full Toolchain: Every component in the repo.")
+                print("     Builds: All of the above plus llbuild, SourceKit, etc.")
+                print("     Modules available to import:")
+                print("       - All modules from Minimal")
+                print("       - SwiftDriver")
+                print("       - SwiftOptions")
+                print("       - llbuild")
+                continue
             }
+            
+            if input.isEmpty {
+                options.components = [.stdlib, .swiftPM, .swiftDriver, .swiftSyntax, .llbuild]
+                break
+            }
+            
+            if let choice = Int(input) {
+                switch choice {
+                case 1: options.components = [.stdlib, .swiftPM, .swiftDriver, .swiftSyntax, .llbuild]; break
+                case 2: options.components = [.stdlib, .swiftDriver]; break
+                case 3: options.components = Set(BuildComponent.allCases); break
+                default: 
+                    print("❌ Invalid selection.")
+                    continue
+                }
+                break
+            }
+            print("❌ Invalid input.")
         }
         
         // 4. Testing
-        print("\n4. Run Tests?")
-        print("   1) Skip All Tests (Fastest) [Default]")
-        print("   2) Run Tests")
-        if let input = readLine(), let choice = Int(input) {
-            options.skipTests = (choice != 2)
-        } else {
-            options.skipTests = true
+        while true {
+            print("\n4. Run Tests? (Enter '?' for help):")
+            print("   1) Skip All Tests (Fastest) [Default]")
+            print("   2) Run Tests")
+            
+            let input = readLine()?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if input == "?" {
+                print("\nℹ️  Testing runs the test suites for the built components:")
+                print("   • Skip All Tests: Finishes immediately after build. Recommended unless you are verifying changes.")
+                print("   • Run Tests: Runs thousands of tests. Can take 30+ minutes.")
+                continue
+            }
+            
+            if input.isEmpty {
+                options.skipTests = true
+                break
+            }
+            
+            if let choice = Int(input) {
+                options.skipTests = (choice != 2)
+                break
+            }
+            print("❌ Invalid input.")
         }
         
         return options
