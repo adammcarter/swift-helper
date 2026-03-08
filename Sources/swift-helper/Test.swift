@@ -27,7 +27,7 @@ struct Test: AsyncParsableCommand {
         
         guard fileManager.fileExists(atPath: swiftcPath) else {
             print("❌ Local swiftc not found at: \(swiftcPath)")
-            print("   Please run `swiftbuild build` first.")
+            print("   Please run `swift-helper build` first.")
             throw ExitCode.failure
         }
         

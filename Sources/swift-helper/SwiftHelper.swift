@@ -2,9 +2,9 @@ import ArgumentParser
 import Foundation
 
 @main
-struct SwiftBuild: AsyncParsableCommand {
+struct SwiftHelper: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        commandName: "swiftbuild",
+        commandName: "swift-helper",
         abstract: "A utility for managing local Swift toolchain builds.",
         subcommands: [Doctor.self, Build.self, Test.self],
         defaultSubcommand: Doctor.self
