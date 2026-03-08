@@ -21,8 +21,11 @@ struct Build: AsyncParsableCommand {
     @Flag(name: .customLong("see-last"), help: "Print the last executed build command.")
     var seeLast: Bool = false
 
-    @Flag(name: .long, help: "Sync built toolchain to ~/Library/Developer/Toolchains/swift-local.xctoolchain")
-    var toolchain: Bool = false
+    @Flag(name: .long, inversion: .prefixedNo, help: "Sync built toolchain to ~/Library/Developer/Toolchains/swift-local.xctoolchain [Default: true]")
+    var toolchain: Bool = true
+
+    @Flag(name: .shortAndLong, help: "Skip confirmation prompts.")
+    var yes: Bool = false
 
     func run() async throws {
         let expandedPath = NSString(string: projectPath).expandingTildeInPath
@@ -134,8 +137,10 @@ struct Build: AsyncParsableCommand {
         if dryRun {
              print("(Dry Run - skipping execution)")
         } else {
-            print("Press Enter to execute this command (or Ctrl+C to cancel)...", terminator: "")
-            _ = readLine()
+            if !yes {
+                print("Press Enter to execute this command (or Ctrl+C to cancel)...", terminator: "")
+                _ = readLine()
+            }
 
             let status = await runShellCommand(buildCommand)
             if status != 0 {
@@ -146,89 +151,21 @@ struct Build: AsyncParsableCommand {
             print("\n✅ Build completed successfully!")
         }
         
-        if toolchain || !dryRun {
-             await handleToolchainBuild()
-        }
-    }
-    
-    func handleToolchainBuild() async {
         var shouldSync = toolchain
-        let toolchainDest = NSString(string: "~/Library/Developer/Toolchains/swift-local.xctoolchain").expandingTildeInPath
         
-        if !shouldSync && !dryRun {
+        if !shouldSync && !dryRun && !yes {
             print("\n📦 Do you want to install this toolchain locally? [y/N]: ", terminator: "")
             if let input = readLine(), input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "y" {
                 shouldSync = true
             }
-        } else if !shouldSync && dryRun {
-             // For dry run, we assume user might want to see the sync command if they passed flag, 
-             // but if they didn't, we skip unless we want to demo it. 
-             // Let's stick to consistent logic: if not requested via flag, we skip in dry-run.
         }
         
         if shouldSync {
-             // Source path depends on build settings. We hardcode arm64-testing for now based on constructBuildCommand
-             // Path: build/arm64-testing/toolchain-macosx-arm64/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/
-             let projectDir = NSString(string: projectPath).expandingTildeInPath
-             let sourcePath = "\(projectDir)/build/arm64-testing/toolchain-macosx-arm64/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/"
-             
-             let rsyncCommand = "rsync -a --delete --exclude 'Info.plist' \"\(sourcePath)\" \"\(toolchainDest)/\""
-             
-             print("\n🚀 Syncing toolchain to \(toolchainDest)...")
-             print("Executing:")
-             print("--------------------------------------------------")
-             print(rsyncCommand)
-             print("--------------------------------------------------\n")
-             
-             if dryRun {
-                 print("(Dry Run - skipping execution)")
-                 return
-             }
-             
-             print("Press Enter to execute this command (or Ctrl+C to cancel)...", terminator: "")
-             _ = readLine()
-             
-             // Ensure destination directory exists
-             let fileManager = FileManager.default
-             if !fileManager.fileExists(atPath: toolchainDest) {
-                 do {
-                     try fileManager.createDirectory(atPath: toolchainDest, withIntermediateDirectories: true)
-                 } catch {
-                     print("❌ Failed to create destination directory: \(error)")
-                     return
-                 }
-             }
-             
-             // Ensure Info.plist exists
-             let infoPlistPath = "\(toolchainDest)/Info.plist"
-             if !fileManager.fileExists(atPath: infoPlistPath) {
-                 print("ℹ️  Creating basic Info.plist...")
-                 let infoPlistContent = """
-                 <?xml version="1.0" encoding="UTF-8"?>
-                 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-                 <plist version="1.0">
-                 <dict>
-                    <key>CFBundleIdentifier</key>
-                    <string>org.swift.local</string>
-                    <key>CompatibilityVersion</key>
-                    <integer>2</integer>
-                 </dict>
-                 </plist>
-                 """
-                 do {
-                     try infoPlistContent.write(toFile: infoPlistPath, atomically: true, encoding: .utf8)
-                 } catch {
-                     print("❌ Failed to create Info.plist: \(error)")
-                 }
-             }
-             
-             let status = await runShellCommand(rsyncCommand)
-             if status == 0 {
-                 print("✅ Toolchain synced successfully!")
-                 print("👉 You can select 'swift-local' in Xcode > Settings > Components > Toolchains")
-             } else {
-                 print("❌ Sync failed with exit code \(status)")
-             }
+             var syncCmd = SyncToolchain()
+             syncCmd.projectPath = projectPath
+             syncCmd.yes = yes
+             syncCmd.dryRun = dryRun
+             try await syncCmd.run()
         }
     }
     
@@ -278,7 +215,7 @@ struct Build: AsyncParsableCommand {
             case 3:
                 options.components = Set(BuildComponent.allCases)
             default:
-                options.components = [.stdlib, .swiftPM, .swiftDriver, .swiftSyntax, .swiftTesting, .swiftTestingMacros, .llbuild]
+                options.components = [.stdlib, .swiftPM, .swiftDriver, .swiftSyntax, .llbuild]
             }
         }
         
@@ -336,8 +273,8 @@ struct Build: AsyncParsableCommand {
         if options.components.contains(.swiftPM) { args.append("--swiftpm") }
         if options.components.contains(.swiftDriver) { args.append("--swift-driver") }
         if options.components.contains(.swiftSyntax) { args.append("--swiftsyntax"); args.append("--install-swiftsyntax") }
-        if options.components.contains(.swiftTesting) { args.append("--swift-testing"); args.append("--install-swift-testing") }
-        if options.components.contains(.swiftTestingMacros) { args.append("--swift-testing-macros"); args.append("--install-swift-testing-macros") }
+        // if options.components.contains(.swiftTesting) { args.append("--swift-testing"); args.append("--install-swift-testing") }
+        // if options.components.contains(.swiftTestingMacros) { args.append("--swift-testing-macros"); args.append("--install-swift-testing-macros") }
         
         // Always install swift and llvm in this workflow? The original script did.
         args.append("--install-swift")
@@ -410,7 +347,7 @@ struct Build: AsyncParsableCommand {
 struct BuildOptions {
     var buildType: BuildType = .releaseDebugInfo
     var platforms: Set<Platform> = [.macOS]
-    var components: Set<BuildComponent> = [.stdlib, .swiftPM, .swiftDriver, .swiftSyntax, .swiftTesting, .swiftTestingMacros, .llbuild]
+    var components: Set<BuildComponent> = [.stdlib, .swiftPM, .swiftDriver, .swiftSyntax, .llbuild]
     var skipTests: Bool = true
 }
 
@@ -429,7 +366,7 @@ enum BuildComponent: String, CaseIterable {
     case swiftPM
     case swiftDriver
     case swiftSyntax
-    case swiftTesting
-    case swiftTestingMacros
+    // case swiftTesting
+    // case swiftTestingMacros
     case llbuild
 }

@@ -6,7 +6,7 @@ struct SwiftHelper: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "swift-helper",
         abstract: "A utility for managing local Swift toolchain builds.",
-        subcommands: [Doctor.self, Build.self, Test.self],
+        subcommands: [Doctor.self, Build.self, Test.self, SyncToolchain.self],
         defaultSubcommand: Doctor.self
     )
 }
