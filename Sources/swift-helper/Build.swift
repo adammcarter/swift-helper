@@ -384,9 +384,9 @@ struct Build: AsyncParsableCommand {
         if options.components.contains(.swiftPM) { args.append("--swiftpm") }
         if options.components.contains(.swiftDriver) { args.append("--swift-driver") }
         if options.components.contains(.swiftSyntax) { args.append("--swiftsyntax"); args.append("--install-swiftsyntax") }
-        // if options.components.contains(.swiftTesting) { args.append("--swift-testing"); args.append("--install-swift-testing") }
-        // if options.components.contains(.swiftTestingMacros) { args.append("--swift-testing-macros"); args.append("--install-swift-testing-macros") }
-        
+        if options.components.contains(.swiftTesting) { args.append("--swift-testing"); args.append("--install-swift-testing") }
+        if options.components.contains(.swiftTestingMacros) { args.append("--swift-testing-macros"); args.append("--install-swift-testing-macros") }
+
         // Always install swift and llvm in this workflow? The original script did.
         args.append("--install-swift")
         args.append("--install-llvm")
@@ -477,7 +477,7 @@ enum BuildComponent: String, CaseIterable {
     case swiftPM
     case swiftDriver
     case swiftSyntax
-    // case swiftTesting
-    // case swiftTestingMacros
+    case swiftTesting
+    case swiftTestingMacros
     case llbuild
 }

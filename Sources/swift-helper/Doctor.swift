@@ -340,10 +340,7 @@ struct Doctor: AsyncParsableCommand {
         if currentPath == loginPath {
             print("✅ Current shell PATH matches fresh login PATH")
         } else {
-            print("⚠️ Current shell PATH differs from fresh login PATH")
-            // This is a warning, maybe not a hard failure? 
-            // The prompt says "failures or warnings". So let's count it as failure to trigger the prompt.
-            success = false
+            print("ℹ️  Current shell PATH differs from fresh login PATH (this is usually fine)")
         }
         
         return success

@@ -16,11 +16,8 @@ struct Clone: AsyncParsableCommand {
         if let userPath = projectPath {
              expandedPath = NSString(string: userPath).expandingTildeInPath
         } else {
-             // Default: Sibling directory to the current working directory
-             // If we are in /Users/adam/repos/swift-helper, we want /Users/adam/repos/swift-project
-             let currentPath = fileManager.currentDirectoryPath
-             let parentPath = (currentPath as NSString).deletingLastPathComponent
-             expandedPath = parentPath + "/swift-project"
+             // Default: Clone into current working directory
+             expandedPath = fileManager.currentDirectoryPath + "/swift-project"
         }
         
         if fileManager.fileExists(atPath: expandedPath) {
